@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Pump Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; text-align: center; margin: 0; padding: 20px; }
+        .container { max-width: 400px; margin: 0 auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h2 { color: #2c3e50; margin-bottom: 20px; }
+        .card { background: #ecf0f1; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+        .temp { font-size: 40px; font-weight: bold; color: #e74c3c; margin: 10px 0; }
+        .status, .mode { font-size: 18px; font-weight: bold; color: #2980b9; }
+        
+        .btn { padding: 12px 30px; font-size: 18px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; color: white; margin: 5px; transition: 0.3s; width: 45%; }
+        .btn-on { background-color: #27ae60; }
+        .btn-on:hover { background-color: #2ecc71; }
+        .btn-off { background-color: #c0392b; }
+        .btn-off:hover { background-color: #e74c3c; }
+        
+        #connection-status { font-size: 14px; margin-top: 20px; color: #7f8c8d; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🌊 ĐIỀU KHIỂN MÁY BƠM</h2>
+    
+    <div class="card">
+        <div>Nhiệt độ động cơ</div>
+        <div class="temp" id="temp-val">-- °C</div>
+        <div>Chế độ: <span class="mode" id="mode-val">Đang tải...</span></div>
+        <div>Trạng thái bơm: <span class="status" id="pump-val">Đang tải...</span></div>
+    </div>
+
+    <div>
+        <p style="font-size: 14px; color: #7f8c8d; margin-bottom: 10px;">(Chỉ điều khiển được khi ở chế độ MANUAL)</p>
+        <button class="btn btn-on" onclick="sendControlCommand('ON')">BẬT BƠM</button>
+        <button class="btn btn-off" onclick="sendControlCommand('OFF')">TẮT BƠM</button>
+    </div>
+
+    <div id="connection-status">🔴 Đang kết nối tới Broker...</div>
+</div>
+
+<script>
+    // 1. Cấu hình thông số Broker HiveMQ
+    const broker = "broker.hivemq.com";
+    const port = 8884; // Cổng chạy WSS (WebSocket Secure)
+    const clientId = "WebClient_" + Math.random().toString(16).substr(2, 8);
+    
+    // Khởi tạo Client
+    const client = new Paho.MQTT.Client(broker, port, clientId);
+
+    // 2. Định nghĩa các hàm xử lý sự kiện MQTT
+    client.onConnectionLost = function(responseObject) {
+        document.getElementById("connection-status").innerHTML = "🔴 Mất kết nối tới máy chủ!";
+        document.getElementById("connection-status").style.color = "red";
+    };
+
+    client.onMessageArrived = function(message) {
+        const topic = message.destinationName;
+        const payload = message.payloadString;
+
+        // Bắt dữ liệu và cập nhật lên giao diện HTML
+        if (topic === "thanh/pump/temperature") {
+            document.getElementById("temp-val").innerText = payload + " °C";
+        } 
+        else if (topic === "thanh/pump/status") {
+            const pumpEl = document.getElementById("pump-val");
+            pumpEl.innerText = payload;
+            pumpEl.style.color = (payload === "ON") ? "#27ae60" : "#c0392b";
+        }
+        else if (topic === "thanh/pump/mode") {
+            document.getElementById("mode-val").innerText = payload;
+        }
+    };
+
+    // 3. Kết nối tới Broker
+    const options = {
+        useSSL: true,
+        onSuccess: function() {
+            document.getElementById("connection-status").innerHTML = "🟢 Đã kết nối thành công!";
+            document.getElementById("connection-status").style.color = "green";
+            
+            // Đăng ký theo dõi (Subscribe) các Topic
+            client.subscribe("thanh/pump/temperature");
+            client.subscribe("thanh/pump/status");
+            client.subscribe("thanh/pump/mode");
+        },
+        onFailure: function(message) {
+            document.getElementById("connection-status").innerHTML = "🔴 Lỗi kết nối: " + message.errorMessage;
+        }
+    };
+    
+    // Kích hoạt hàm kết nối
+    client.connect(options);
+
+    // 4. Hàm gửi lệnh BẬT/TẮT khi nhấn nút trên Web
+    function sendControlCommand(command) {
+        if (client.isConnected()) {
+            const message = new Paho.MQTT.Message(command);
+            message.destinationName = "thanh/pump/control";
+            client.send(message);
+        } else {
+            alert("Chưa kết nối được tới máy chủ MQTT!");
+        }
+    }
+</script>
+
+</body>
+</html>
